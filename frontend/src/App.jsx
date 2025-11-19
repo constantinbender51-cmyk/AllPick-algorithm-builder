@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
 import { ChevronRight, ChevronLeft, Play, Plus, Trash2, TrendingUp, Activity, BarChart3, Database, Settings, Target, CheckCircle } from 'lucide-react';
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const AlgoBuilder = () => {
   const [currentTab, setCurrentTab] = useState(0);
