@@ -113,7 +113,7 @@ class Backtester:
         
         # Calculate metrics
         metrics = self._calculate_metrics()
-        print("met: ", (metrics)
+        print("met: ", (metrics))
         return {
             'metrics': metrics,
             'trades': self.trades,
