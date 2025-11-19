@@ -28,6 +28,10 @@ class Backtester:
         Returns:
             Backtest results
         """
+        print("len df: ", len(df))
+        print("len prob: ", len(probabilities))
+        print("len pred: ", len(predictions))
+        print("len strategy_config: ", len(strategy_config))
         self.capital = self.initial_capital
         self.position = 0
         self.entry_price = 0
