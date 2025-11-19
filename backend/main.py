@@ -41,9 +41,15 @@ class NormalizationPreviewRequest(BaseModel):
     normalization: Dict[str, str]
     features: List[Dict[str, Any]]
 
+class FeaturePreviewRequest(BaseModel):
+    dataSource: Dict[str, Any]
+    features: List[Dict[str, Any]]
+    baseFeatures: Optional[Dict[str, bool]] = None
+
 class BacktestRequest(BaseModel):
     dataSources: List[Dict[str, Any]]
     features: List[Dict[str, Any]]
+    baseFeatures: Optional[Dict[str, bool]] = None
     normalization: Dict[str, str]
     target: Dict[str, Any]
     algorithm: Dict[str, Any]
@@ -115,6 +121,43 @@ async def calculate_features(features: List[Dict[str, Any]], session_key: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/api/features/preview")
+async def preview_features(request: FeaturePreviewRequest):
+    """Preview feature values and statistics"""
+    try:
+        # Fetch data
+        fetcher = DataFetcher()
+        df = fetcher.fetch_data(
+            api=request.dataSource['api'],
+            symbol=request.dataSource['symbol'],
+            timeframe=request.dataSource['timeframe'],
+            start_date=request.dataSource['startDate'],
+            end_date=request.dataSource['endDate']
+        )
+        
+        # Get selected base features
+        selected_base = None
+        if request.baseFeatures:
+            selected_base = [k for k, v in request.baseFeatures.items() if v]
+        
+        # Create feature engineer with selected base features
+        engineer = FeatureEngineer(df, selected_base_features=selected_base)
+        
+        # Add technical indicators
+        for feature in request.features:
+            engineer.add_technical_indicator(
+                feature_type=feature['type'],
+                params=feature['params']
+            )
+        
+        # Get feature statistics
+        stats = engineer.get_feature_stats()
+        
+        return stats
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/api/features/normalize-preview")
 async def normalize_preview(request: NormalizationPreviewRequest):
     """Preview normalization effects"""
@@ -171,7 +214,12 @@ async def run_backtest(request: BacktestRequest):
         df = dfs[0]
         
         # Step 2: Feature engineering
-        engineer = FeatureEngineer(df)
+        # Get selected base features
+        selected_base = None
+        if request.baseFeatures:
+            selected_base = [k for k, v in request.baseFeatures.items() if v]
+        
+        engineer = FeatureEngineer(df, selected_base_features=selected_base)
         
         for feature in request.features:
             engineer.add_technical_indicator(
@@ -247,7 +295,8 @@ async def run_backtest(request: BacktestRequest):
             df=test_df,
             predictions=predictions,
             probabilities=probabilities,
-            strategy_config=request.strategy
+            strategy_config=request.strategy,
+            train_df=train_df  # Pass training data for equity curve
         )
         
         # Add feature importance if available
