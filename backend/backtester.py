@@ -253,86 +253,161 @@ class Backtester:
         self.entry_price = 0.0
     
     def _calculate_equity(self, current_price: float) -> float:
-        """Calculate current equity including unrealized P&L"""
+        """Calculate current equity including unrealized P&L with safety checks"""
         if abs(self.position) < 1e-8:
-            return self.capital
+            return float(self.capital)
+        
+        # Ensure prices are valid
+        if not np.isfinite(current_price) or not np.isfinite(self.entry_price):
+            return float(self.capital)
         
         # Calculate unrealized P&L
-        if self.position > 0:
-            unrealized_pnl = (current_price - self.entry_price) * self.position
-        else:
-            unrealized_pnl = (self.entry_price - current_price) * abs(self.position)
-        
-        equity = self.capital + unrealized_pnl
-        return equity
+        try:
+            if self.position > 0:
+                unrealized_pnl = (current_price - self.entry_price) * self.position
+            else:
+                unrealized_pnl = (self.entry_price - current_price) * abs(self.position)
+            
+            equity = self.capital + unrealized_pnl
+            
+            # Ensure equity is finite
+            if np.isfinite(equity) and equity >= 0:
+                return float(equity)
+            else:
+                print(f"DEBUG: Invalid equity calculated: {equity}, using capital: {self.capital}")
+                return float(self.capital)
+                
+        except Exception as e:
+            print(f"DEBUG: Error calculating equity: {e}")
+            return float(self.capital)
     
     def _calculate_metrics(self) -> Dict:
-        """Calculate performance metrics"""
+        """Calculate performance metrics with NaN handling"""
         print(f"DEBUG: Calculating metrics - equity curve length: {len(self.equity_curve)}, trades: {len(self.trades)}")
         
         if not self.equity_curve:
             print("DEBUG: No equity curve data")
-            return {}
+            return self._get_default_metrics()
         
-        # Extract equity values
-        equity_values = [e['equity'] for e in self.equity_curve]
-        print(f"DEBUG: Equity values range: ${min(equity_values):.2f} to ${max(equity_values):.2f}")
-        
-        # Total return
-        total_return = ((equity_values[-1] - self.initial_capital) / self.initial_capital) * 100
-        print(f"DEBUG: Total return calculation: (${equity_values[-1]:.2f} - ${self.initial_capital:.2f}) / ${self.initial_capital:.2f} * 100 = {total_return:.2f}%")
-        
-        # Calculate returns
-        returns = []
-        if len(equity_values) > 1:
-            returns = np.diff(equity_values) / equity_values[:-1]
-            print(f"DEBUG: Returns calculated - length: {len(returns)}, mean: {np.mean(returns):.6f}" if len(returns) > 0 else "No returns")
-        
-        # Sharpe ratio (assuming 252 trading days)
-        sharpe_ratio = 0
-        if len(returns) > 0 and np.std(returns) != 0:
-            sharpe_ratio = (np.mean(returns) / np.std(returns)) * np.sqrt(252)
-            print(f"DEBUG: Sharpe ratio calculation: ({np.mean(returns):.6f} / {np.std(returns):.6f}) * sqrt(252) = {sharpe_ratio:.4f}")
-        else:
-            print(f"DEBUG: Cannot calculate Sharpe ratio - returns length: {len(returns)}, std: {np.std(returns) if len(returns) > 0 else 'N/A'}")
-        
-        # Max drawdown
-        cumulative = np.array(equity_values)
-        running_max = np.maximum.accumulate(cumulative)
-        drawdown = (cumulative - running_max) / running_max * 100
-        max_drawdown = np.min(drawdown) if len(drawdown) > 0 else 0
-        print(f"DEBUG: Max drawdown: {max_drawdown:.2f}%")
-        
-        # Trade statistics
-        closed_trades = [t for t in self.trades if 'pnl' in t]
-        winning_trades = [t for t in closed_trades if t['pnl'] > 0]
-        losing_trades = [t for t in closed_trades if t['pnl'] < 0]
-        
-        total_trades = len(closed_trades)
-        winning_count = len(winning_trades)
-        losing_count = len(losing_trades)
-        
-        print(f"DEBUG: Trade stats - total: {total_trades}, winning: {winning_count}, losing: {losing_count}")
-        
-        win_rate = (winning_count / total_trades * 100) if total_trades > 0 else 0
-        
-        avg_trade_return = 0
-        if total_trades > 0:
-            total_pnl = sum([t['pnl'] for t in closed_trades])
-            avg_trade_return = (total_pnl / total_trades / self.initial_capital) * 100
-            print(f"DEBUG: Avg trade return: {avg_trade_return:.2f}%, total P&L: ${total_pnl:.2f}")
-        
-        metrics = {
-            'total_return': round(total_return, 2),
-            'sharpe_ratio': round(sharpe_ratio, 4),
-            'max_drawdown': round(max_drawdown, 2),
-            'win_rate': round(win_rate, 2),
-            'total_trades': total_trades,
-            'winning_trades': winning_count,
-            'losing_trades': losing_count,
-            'avg_trade_return': round(avg_trade_return, 2),
-            'final_equity': round(equity_values[-1], 2)
+        try:
+            # Extract equity values and handle any NaN/inf
+            equity_values = []
+            for e in self.equity_curve:
+                equity = e['equity']
+                if np.isfinite(equity):  # Check if value is finite (not NaN or inf)
+                    equity_values.append(equity)
+                else:
+                    print(f"DEBUG: Found non-finite equity value: {equity}, replacing with previous valid value")
+                    # Use last valid value or initial capital if no previous
+                    replacement = equity_values[-1] if equity_values else self.initial_capital
+                    equity_values.append(replacement)
+            
+            if not equity_values:
+                print("DEBUG: No valid equity values after cleaning")
+                return self._get_default_metrics()
+            
+            print(f"DEBUG: Equity values range: ${min(equity_values):.2f} to ${max(equity_values):.2f}")
+            
+            # Total return with safety checks
+            final_equity = equity_values[-1]
+            if np.isfinite(final_equity) and self.initial_capital > 0:
+                total_return = ((final_equity - self.initial_capital) / self.initial_capital) * 100
+            else:
+                total_return = 0.0
+                print(f"DEBUG: Invalid values for total return calculation - final_equity: {final_equity}, initial_capital: {self.initial_capital}")
+            
+            print(f"DEBUG: Total return: {total_return:.2f}%")
+            
+            # Calculate returns with safety
+            returns = []
+            if len(equity_values) > 1:
+                for i in range(1, len(equity_values)):
+                    if equity_values[i-1] > 0 and np.isfinite(equity_values[i-1]):
+                        ret = (equity_values[i] - equity_values[i-1]) / equity_values[i-1]
+                        if np.isfinite(ret):
+                            returns.append(ret)
+                        else:
+                            returns.append(0.0)
+                    else:
+                        returns.append(0.0)
+            
+            print(f"DEBUG: Returns calculated - length: {len(returns)}")
+            
+            # Sharpe ratio with safety checks
+            sharpe_ratio = 0.0
+            if len(returns) > 0:
+                returns_array = np.array(returns)
+                valid_returns = returns_array[np.isfinite(returns_array)]
+                if len(valid_returns) > 0 and np.std(valid_returns) > 1e-8:
+                    sharpe_ratio = (np.mean(valid_returns) / np.std(valid_returns)) * np.sqrt(252)
+                    print(f"DEBUG: Sharpe ratio: {sharpe_ratio:.4f}")
+                else:
+                    print(f"DEBUG: Cannot calculate Sharpe - valid returns: {len(valid_returns)}, std: {np.std(valid_returns) if len(valid_returns) > 0 else 'N/A'}")
+            
+            # Max drawdown with safety
+            max_drawdown = 0.0
+            if len(equity_values) > 0:
+                cumulative = np.array(equity_values)
+                running_max = np.maximum.accumulate(cumulative)
+                # Avoid division by zero in drawdown calculation
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    drawdown = np.where(running_max > 0, (cumulative - running_max) / running_max * 100, 0.0)
+                drawdown = drawdown[np.isfinite(drawdown)]
+                max_drawdown = np.min(drawdown) if len(drawdown) > 0 else 0.0
+            print(f"DEBUG: Max drawdown: {max_drawdown:.2f}%")
+            
+            # Trade statistics with safety
+            closed_trades = [t for t in self.trades if 'pnl' in t and np.isfinite(t.get('pnl', 0))]
+            winning_trades = [t for t in closed_trades if t['pnl'] > 0]
+            losing_trades = [t for t in closed_trades if t['pnl'] < 0]
+            
+            total_trades = len(closed_trades)
+            winning_count = len(winning_trades)
+            losing_count = len(losing_trades)
+            
+            print(f"DEBUG: Trade stats - total: {total_trades}, winning: {winning_count}, losing: {losing_count}")
+            
+            # Win rate with safety
+            win_rate = (winning_count / total_trades * 100) if total_trades > 0 else 0.0
+            
+            # Average trade return with safety
+            avg_trade_return = 0.0
+            if total_trades > 0 and self.initial_capital > 0:
+                total_pnl = sum([t['pnl'] for t in closed_trades])
+                if np.isfinite(total_pnl):
+                    avg_trade_return = (total_pnl / total_trades / self.initial_capital) * 100
+                print(f"DEBUG: Avg trade return: {avg_trade_return:.2f}%, total P&L: ${total_pnl:.2f}")
+            
+            # Ensure all values are finite and convert to native Python types
+            metrics = {
+                'total_return': float(round(total_return, 2)) if np.isfinite(total_return) else 0.0,
+                'sharpe_ratio': float(round(sharpe_ratio, 4)) if np.isfinite(sharpe_ratio) else 0.0,
+                'max_drawdown': float(round(max_drawdown, 2)) if np.isfinite(max_drawdown) else 0.0,
+                'win_rate': float(round(win_rate, 2)) if np.isfinite(win_rate) else 0.0,
+                'total_trades': int(total_trades),
+                'winning_trades': int(winning_count),
+                'losing_trades': int(losing_count),
+                'avg_trade_return': float(round(avg_trade_return, 2)) if np.isfinite(avg_trade_return) else 0.0,
+                'final_equity': float(round(final_equity, 2)) if np.isfinite(final_equity) else float(self.initial_capital)
+            }
+            
+            print(f"DEBUG: Final metrics: {metrics}")
+            return metrics
+            
+        except Exception as e:
+            print(f"DEBUG: Error calculating metrics: {e}")
+            return self._get_default_metrics()
+    
+    def _get_default_metrics(self) -> Dict:
+        """Return default metrics when calculation fails"""
+        return {
+            'total_return': 0.0,
+            'sharpe_ratio': 0.0,
+            'max_drawdown': 0.0,
+            'win_rate': 0.0,
+            'total_trades': 0,
+            'winning_trades': 0,
+            'losing_trades': 0,
+            'avg_trade_return': 0.0,
+            'final_equity': float(self.initial_capital)
         }
-        
-        print(f"DEBUG: Final metrics: {metrics}")
-        return metrics
