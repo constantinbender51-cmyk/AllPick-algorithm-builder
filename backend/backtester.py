@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple
 from datetime import datetime
+import time 
 
 class Backtester:
     """Backtesting engine for trading strategies"""
@@ -66,6 +67,7 @@ class Backtester:
         buy_signals_skipped = 0
         
         for i in range(len(df)):
+            time.sleep(0.1)
             current_price = df.iloc[i]['close']
             timestamp = df.iloc[i]['timestamp']
             prediction = predictions[i]
