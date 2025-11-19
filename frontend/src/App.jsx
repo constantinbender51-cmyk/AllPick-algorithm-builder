@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { ChevronRight, ChevronLeft, Play, Plus, Trash2, TrendingUp, Activity, BarChart3, Database, Settings, Target, CheckCircle } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Play, Plus, Trash2, TrendingUp, Activity, BarChart3, Database, Settings, Target, CheckCircle, Eye } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
@@ -8,16 +8,25 @@ const AlgoBuilder = () => {
   const [currentTab, setCurrentTab] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
   
-  // Data Selection State
+  // Data Selection State with BTC defaults
   const [dataSources, setDataSources] = useState([]);
   const [newDataSource, setNewDataSource] = useState({
     api: 'yahoo',
-    symbol: '',
+    symbol: 'BTC-USD',
     timeframe: '1d',
-    startDate: '',
-    endDate: ''
+    startDate: '2017-01-01',
+    endDate: new Date().toISOString().split('T')[0]
   });
   const [dataLoading, setDataLoading] = useState(false);
+  
+  // Base Features State (OHLCV)
+  const [baseFeatures, setBaseFeatures] = useState({
+    open: true,
+    high: true,
+    low: true,
+    close: true,
+    volume: true
+  });
   
   // Feature Selection State
   const [features, setFeatures] = useState([]);
@@ -25,6 +34,7 @@ const AlgoBuilder = () => {
     type: 'SMA',
     params: { period: 20 }
   });
+  const [featurePreview, setFeaturePreview] = useState(null);
   const [polynomialDegree, setPolynomialDegree] = useState(1);
   const [featureMultiplications, setFeatureMultiplications] = useState([]);
   const [derivatives, setDerivatives] = useState({ first: false, second: false });
@@ -119,7 +129,7 @@ const AlgoBuilder = () => {
       const data = await response.json();
       
       setDataSources([...dataSources, { ...newDataSource, id: Date.now(), preview: data.preview }]);
-      setNewDataSource({ api: 'yahoo', symbol: '', timeframe: '1d', startDate: '', endDate: '' });
+      setNewDataSource({ api: 'yahoo', symbol: 'BTC-USD', timeframe: '1d', startDate: '2017-01-01', endDate: new Date().toISOString().split('T')[0] });
     } catch (error) {
       alert('Error fetching data: ' + error.message);
     }
@@ -138,6 +148,36 @@ const AlgoBuilder = () => {
 
   const removeFeature = (id) => {
     setFeatures(features.filter(f => f.id !== id));
+  };
+
+  const toggleBaseFeature = (featureName) => {
+    setBaseFeatures({
+      ...baseFeatures,
+      [featureName]: !baseFeatures[featureName]
+    });
+  };
+
+  const previewFeatures = async () => {
+    if (dataSources.length === 0) {
+      alert('Please add a data source first');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/features/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataSource: dataSources[0],
+          features: features,
+          baseFeatures: baseFeatures
+        })
+      });
+      const data = await response.json();
+      setFeaturePreview(data);
+    } catch (error) {
+      alert('Error previewing features: ' + error.message);
+    }
   };
 
   const updateNormalization = (featureName, method) => {
@@ -167,6 +207,7 @@ const AlgoBuilder = () => {
         body: JSON.stringify({
           dataSources,
           features,
+          baseFeatures,
           normalization,
           target,
           algorithm,
@@ -205,7 +246,7 @@ const AlgoBuilder = () => {
             <input 
               type="text"
               className="w-full p-2 border border-gray-300 rounded-md"
-              placeholder="AAPL or BTCUSDT"
+              placeholder="BTC-USD or AAPL"
               value={newDataSource.symbol}
               onChange={(e) => setNewDataSource({...newDataSource, symbol: e.target.value.toUpperCase()})}
             />
@@ -288,6 +329,25 @@ const AlgoBuilder = () => {
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-800">Feature Engineering</h2>
       
+      {/* Base Features Section */}
+      <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
+        <h3 className="text-lg font-semibold">Base OHLCV Features</h3>
+        <p className="text-sm text-gray-600">Select which price/volume features to include in the model</p>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {Object.keys(baseFeatures).map((feature) => (
+            <label key={feature} className="flex items-center gap-2 p-3 border rounded-md cursor-pointer hover:bg-gray-50">
+              <input 
+                type="checkbox"
+                checked={baseFeatures[feature]}
+                onChange={() => toggleBaseFeature(feature)}
+              />
+              <span className="capitalize">{feature}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      
+      {/* Technical Indicators Section */}
       <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
         <h3 className="text-lg font-semibold">Add Technical Indicator</h3>
         
@@ -340,7 +400,7 @@ const AlgoBuilder = () => {
       
       {features.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow-md">
-          <h3 className="text-lg font-semibold mb-4">Added Features</h3>
+          <h3 className="text-lg font-semibold mb-4">Added Technical Indicators</h3>
           <div className="space-y-2">
             {features.map((feature) => (
               <div key={feature.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
@@ -357,6 +417,53 @@ const AlgoBuilder = () => {
         </div>
       )}
       
+      {/* Feature Preview Button */}
+      {(Object.values(baseFeatures).some(v => v) || features.length > 0) && dataSources.length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <button 
+            onClick={previewFeatures}
+            className="w-full md:w-auto bg-purple-600 text-white px-6 py-2 rounded-md hover:bg-purple-700 transition flex items-center gap-2"
+          >
+            <Eye size={20} />
+            Preview Feature Values
+          </button>
+        </div>
+      )}
+      
+      {/* Feature Preview Display */}
+      {featurePreview && (
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h3 className="text-lg font-semibold mb-4">Feature Statistics</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left p-2">Feature</th>
+                  <th className="text-left p-2">Mean</th>
+                  <th className="text-left p-2">Std Dev</th>
+                  <th className="text-left p-2">Min</th>
+                  <th className="text-left p-2">Max</th>
+                  <th className="text-left p-2">Last 5 Values</th>
+                </tr>
+              </thead>
+              <tbody>
+                {featurePreview.stats?.map((stat, idx) => (
+                  <tr key={idx} className="border-b">
+                    <td className="p-2 font-medium">{stat.feature}</td>
+                    <td className="p-2">{stat.mean?.toFixed(4)}</td>
+                    <td className="p-2">{stat.std?.toFixed(4)}</td>
+                    <td className="p-2">{stat.min?.toFixed(4)}</td>
+                    <td className="p-2">{stat.max?.toFixed(4)}</td>
+                    <td className="p-2 text-xs">{stat.last_5_values?.map(v => v?.toFixed(2)).join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      
+      {/* Advanced Feature Engineering */}
       <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
         <h3 className="text-lg font-semibold">Advanced Feature Engineering</h3>
         
@@ -396,7 +503,11 @@ const AlgoBuilder = () => {
   );
 
   const renderNormalizationTab = () => {
-    const allFeatures = ['Open', 'High', 'Low', 'Close', 'Volume', ...features.map(f => f.label)];
+    // Get all selected features
+    const selectedBaseFeatures = Object.entries(baseFeatures)
+      .filter(([_, selected]) => selected)
+      .map(([name, _]) => name.charAt(0).toUpperCase() + name.slice(1));
+    const allFeatures = [...selectedBaseFeatures, ...features.map(f => f.label)];
     
     return (
       <div className="space-y-6">
@@ -779,7 +890,7 @@ const AlgoBuilder = () => {
           </div>
           
           <div className="bg-white p-6 rounded-lg shadow-md">
-            <h3 className="text-lg font-semibold mb-4">Equity Curve</h3>
+            <h3 className="text-lg font-semibold mb-4">Equity Curve (Full Range)</h3>
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={backtestResults.equity_curve}>
                 <CartesianGrid strokeDasharray="3 3" />
