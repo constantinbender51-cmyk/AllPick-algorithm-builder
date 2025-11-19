@@ -8,7 +8,8 @@
     "react-scripts": "5.0.1",
     "recharts": "^2.10.3",
     "lucide-react": "^0.294.0",
-    "axios": "^1.6.2"
+    "axios": "^1.6.2",
+    "serve": "^14.2.1"
   },
   "scripts": {
     "start": "react-scripts start",
