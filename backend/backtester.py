@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple
 from datetime import datetime
-import time 
 
 class Backtester:
     """Backtesting engine for trading strategies"""
@@ -16,15 +15,17 @@ class Backtester:
         self.equity_curve = []
     
     def run_backtest(self, df: pd.DataFrame, predictions: np.ndarray, 
-                     probabilities: np.ndarray, strategy_config: Dict) -> Dict:
+                     probabilities: np.ndarray, strategy_config: Dict,
+                     train_df: pd.DataFrame = None) -> Dict:
         """
         Run backtest with given predictions and strategy
         
         Args:
-            df: DataFrame with price data
+            df: DataFrame with price data (test set)
             predictions: Model predictions
             probabilities: Prediction probabilities/confidence
             strategy_config: Strategy configuration
+            train_df: Training dataframe for equity curve (optional)
         
         Returns:
             Backtest results
@@ -58,6 +59,16 @@ class Backtester:
         print(f"DEBUG: Initial capital: {self.initial_capital}")
         print(f"DEBUG: Min position amount: ${min_position_amount}")
         
+        # Add training period to equity curve (flat line at initial capital)
+        if train_df is not None:
+            print(f"DEBUG: Adding training period to equity curve ({len(train_df)} bars)")
+            for _, row in train_df.iterrows():
+                self.equity_curve.append({
+                    'date': str(row['timestamp']),
+                    'equity': float(self.initial_capital),
+                    'price': row['close']
+                })
+        
         bars_in_position = 0
         
         # Add debug counters
@@ -67,7 +78,6 @@ class Backtester:
         buy_signals_skipped = 0
         
         for i in range(len(df)):
-            time.sleep(0.1)
             current_price = df.iloc[i]['close']
             timestamp = df.iloc[i]['timestamp']
             prediction = predictions[i]
@@ -255,29 +265,28 @@ class Backtester:
         self.entry_price = 0.0
     
     def _calculate_equity(self, current_price: float) -> float:
-        """Calculate current equity including unrealized P&L with safety checks"""
+        """Calculate current equity = cash + position value (FIXED)"""
         if abs(self.position) < 1e-8:
+            # No position - equity is just remaining cash
             return float(self.capital)
         
         # Ensure prices are valid
         if not np.isfinite(current_price) or not np.isfinite(self.entry_price):
             return float(self.capital)
         
-        # Calculate unrealized P&L
         try:
-            if self.position > 0:
-                unrealized_pnl = (current_price - self.entry_price) * self.position
-            else:
-                unrealized_pnl = (self.entry_price - current_price) * abs(self.position)
+            # Calculate current position value at market price
+            position_value = abs(self.position) * current_price
             
-            equity = self.capital + unrealized_pnl
+            # Total equity = remaining cash + current position value
+            equity = self.capital + position_value
             
             # Ensure equity is finite
             if np.isfinite(equity) and equity >= 0:
                 return float(equity)
             else:
-                print(f"DEBUG: Invalid equity calculated: {equity}, using capital: {self.capital}")
-                return float(self.capital)
+                print(f"DEBUG: Invalid equity calculated: {equity}, using capital + position value")
+                return float(self.capital + position_value)
                 
         except Exception as e:
             print(f"DEBUG: Error calculating equity: {e}")
