@@ -9,9 +9,11 @@ from typing import Dict, List
 class FeatureEngineer:
     """Handles all feature engineering tasks"""
     
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df: pd.DataFrame, selected_base_features: List[str] = None):
         self.df = df.copy()
         self.feature_columns = []
+        # Default to all OHLCV features if none specified
+        self.selected_base_features = selected_base_features or ['open', 'high', 'low', 'close', 'volume']
     
     def add_technical_indicator(self, feature_type: str, params: Dict) -> pd.DataFrame:
         """
@@ -116,13 +118,14 @@ class FeatureEngineer:
         
         Args:
             degree: Polynomial degree
-            feature_cols: Columns to create polynomials from (default: all numeric)
+            feature_cols: Columns to create polynomials from (default: selected base + technical features)
         """
         if degree <= 1:
             return
         
         if feature_cols is None:
-            feature_cols = self.feature_columns if self.feature_columns else ['close']
+            # Include both selected base features and technical indicators
+            feature_cols = self.get_feature_columns()
         
         # Get the feature data
         feature_data = self.df[feature_cols].fillna(0)
@@ -162,9 +165,10 @@ class FeatureEngineer:
             first_order: Add first derivative
             second_order: Add second derivative
         """
-        base_features = ['close', 'volume'] + self.feature_columns
+        # Include both selected base features and technical indicators
+        all_features = self.get_feature_columns()
         
-        for feature in base_features:
+        for feature in all_features:
             if feature in self.df.columns:
                 if first_order:
                     col_name = f'{feature}_derivative_1'
@@ -205,9 +209,26 @@ class FeatureEngineer:
         return self.df
     
     def get_feature_columns(self) -> List[str]:
-        """Get list of all feature columns"""
-        base_features = ['open', 'high', 'low', 'close', 'volume']
-        return base_features + self.feature_columns
+        """Get list of all feature columns (selected base features + technical indicators)"""
+        return self.selected_base_features + self.feature_columns
+    
+    def get_feature_stats(self) -> Dict:
+        """Get statistics for all features"""
+        feature_cols = self.get_feature_columns()
+        stats = []
+        
+        for col in feature_cols:
+            if col in self.df.columns:
+                stats.append({
+                    'feature': col,
+                    'mean': float(self.df[col].mean()),
+                    'std': float(self.df[col].std()),
+                    'min': float(self.df[col].min()),
+                    'max': float(self.df[col].max()),
+                    'last_5_values': self.df[col].tail(5).tolist()
+                })
+        
+        return {'stats': stats}
     
     def clean_data(self):
         """Remove NaN and infinite values"""
