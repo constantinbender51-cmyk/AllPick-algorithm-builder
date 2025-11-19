@@ -6,7 +6,7 @@ pandas
 numpy
 yfinance==0.2.32
 ccxt
-scikit-learn==1.4.0
+scikit-learn
 tensorflow
 lightgbm
 ta
